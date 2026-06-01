@@ -1,0 +1,31 @@
+# Backups del modelo (no subir, son pesados)
+api_ai/keras_model_backup_*.h5
+
+# Imágenes de entrenamiento (datos locales)
+api_ai/training_data/*/
+
+# Imágenes subidas por usuarios
+api_ai/uploads/
+uploads/clasificaciones/
+
+# Python cache
+api_ai/__pycache__/
+*.pyc
+*.pyo
+
+# Node modules
+api_ai/node_modules/
+
+# Variables de entorno locales
+.env
+.env.local
+.env.php
+
+# Logs
+*.log
+flask_out.txt
+flask_err.txt
+
+# XAMPP / sistema
+Thumbs.db
+.DS_Store

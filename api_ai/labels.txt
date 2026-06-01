@@ -1,0 +1,5 @@
+0 Metal
+1 Orgánico
+2 Papel y Cartón
+3 Plástico
+4 Vidrio
