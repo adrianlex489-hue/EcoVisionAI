@@ -15,7 +15,17 @@ class ModelPredictor:
         if not os.path.exists(labels_path):
             raise FileNotFoundError(f"Labels no encontrado: {labels_path}")
 
-        self.model = keras.models.load_model(model_path, compile=False)
+        # Try loading .h5 first, fall back to SavedModel directory
+        saved_model_dir = model_path.replace('.h5', '_saved')
+        try:
+            self.model = keras.models.load_model(model_path, compile=False)
+        except Exception as e1:
+            print(f"[WARN] No se pudo cargar .h5: {e1}")
+            if os.path.isdir(saved_model_dir):
+                print(f"[INFO] Intentando cargar SavedModel desde: {saved_model_dir}")
+                self.model = keras.models.load_model(saved_model_dir, compile=False)
+            else:
+                raise
 
         with open(labels_path, 'r', encoding='utf-8') as f:
             lines = [l.strip() for l in f.readlines() if l.strip()]
