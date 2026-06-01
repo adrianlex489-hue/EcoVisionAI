@@ -39,29 +39,31 @@ class ModelPredictor:
         if not os.path.exists(labels_path):
             raise FileNotFoundError(f"Labels no encontrado: {labels_path}")
 
-        # Try TFLite first (much lighter on RAM)
+        # Use SavedModel directory — avoids 'optional' deserialization bug in tf-keras
+        saved_model_dir = model_path.replace('.h5', '_saved')
+        tflite_path     = model_path.replace('.h5', '.tflite')
+
         if _load_tflite(model_path):
             self._inp = _interpreter.get_input_details()
             self._out = _interpreter.get_output_details()
             print(f"[INFO] TFLite listo. Input: {self._inp[0]['shape']}")
-        else:
-            # Fall back to full Keras
-            if not os.path.exists(model_path):
-                raise FileNotFoundError(f"Modelo no encontrado: {model_path}")
+        elif os.path.isdir(saved_model_dir):
+            # SavedModel avoids the 'optional' kwarg bug
+            print(f"[INFO] Cargando SavedModel desde: {saved_model_dir}")
             os.environ['TF_USE_LEGACY_KERAS'] = '1'
             os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
             import tf_keras as keras
-            saved_model_dir = model_path.replace('.h5', '_saved')
-            try:
-                self._keras_model = keras.models.load_model(model_path, compile=False)
-                print(f"[INFO] Keras .h5 cargado")
-            except Exception as e1:
-                print(f"[WARN] .h5 falló: {e1}")
-                if os.path.isdir(saved_model_dir):
-                    self._keras_model = keras.models.load_model(saved_model_dir, compile=False)
-                    print(f"[INFO] SavedModel cargado")
-                else:
-                    raise
+            self._keras_model = keras.models.load_model(saved_model_dir, compile=False)
+            print(f"[INFO] SavedModel cargado OK")
+        elif os.path.exists(model_path):
+            print(f"[INFO] Cargando .h5: {model_path}")
+            os.environ['TF_USE_LEGACY_KERAS'] = '1'
+            os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+            import tf_keras as keras
+            self._keras_model = keras.models.load_model(model_path, compile=False)
+            print(f"[INFO] .h5 cargado OK")
+        else:
+            raise FileNotFoundError(f"No se encontró ningún modelo en: {model_path}")
 
         # Load labels
         with open(labels_path, 'r', encoding='utf-8') as f:
