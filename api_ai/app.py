@@ -98,7 +98,9 @@ def health():
         return jsonify({'status': 'ok', 'categorias': p.labels,
                         'model_path': MODEL_PATH})
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        return jsonify({'status': 'error', 'message': str(e),
+                        'model_exists': os.path.exists(MODEL_PATH),
+                        'labels_exists': os.path.exists(LABELS_PATH)}), 500
 
 
 if __name__ == '__main__':
