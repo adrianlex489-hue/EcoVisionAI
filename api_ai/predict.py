@@ -3,106 +3,80 @@ import numpy as np
 from PIL import Image
 import io
 
-# Try TFLite first (lightweight, works on free tier)
-# Fall back to full TF/Keras if TFLite not available
-_USE_TFLITE = False
-_interpreter = None
-
-def _load_tflite(model_path):
-    global _USE_TFLITE, _interpreter
-    tflite_path = model_path.replace('.h5', '.tflite')
-    if not os.path.exists(tflite_path):
-        return False
-    try:
-        import tflite_runtime.interpreter as tflite
-        _interpreter = tflite.Interpreter(model_path=tflite_path)
-        _interpreter.allocate_tensors()
-        _USE_TFLITE = True
-        print(f"[INFO] Usando tflite_runtime (ligero)")
-        return True
-    except ImportError:
-        pass
-    try:
-        import tensorflow as tf
-        _interpreter = tf.lite.Interpreter(model_path=tflite_path)
-        _interpreter.allocate_tensors()
-        _USE_TFLITE = True
-        print(f"[INFO] Usando tf.lite.Interpreter")
-        return True
-    except Exception as e:
-        print(f"[WARN] TFLite no disponible: {e}")
-        return False
+os.environ['TF_USE_LEGACY_KERAS'] = '1'
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
 
 class ModelPredictor:
     def __init__(self, model_path, labels_path):
+        import tf_keras as keras
+
         if not os.path.exists(labels_path):
             raise FileNotFoundError(f"Labels no encontrado: {labels_path}")
 
-        # Use SavedModel directory — avoids 'optional' deserialization bug in tf-keras
-        saved_model_dir = model_path.replace('.h5', '_saved')
-        tflite_path     = model_path.replace('.h5', '.tflite')
+        # Priority: SavedModel > TFLite > .h5
+        saved_dir   = model_path.replace('.h5', '_saved')
+        tflite_path = model_path.replace('.h5', '.tflite')
 
-        if _load_tflite(model_path):
-            self._inp = _interpreter.get_input_details()
-            self._out = _interpreter.get_output_details()
-            print(f"[INFO] TFLite listo. Input: {self._inp[0]['shape']}")
-        elif os.path.isdir(saved_model_dir):
-            # SavedModel avoids the 'optional' kwarg bug
-            print(f"[INFO] Cargando SavedModel desde: {saved_model_dir}")
-            os.environ['TF_USE_LEGACY_KERAS'] = '1'
-            os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-            import tf_keras as keras
-            self._keras_model = keras.models.load_model(saved_model_dir, compile=False)
-            print(f"[INFO] SavedModel cargado OK")
+        if os.path.isdir(saved_dir):
+            print(f"[INFO] Cargando SavedModel: {saved_dir}")
+            self.model = keras.models.load_model(saved_dir, compile=False)
+            self._mode = 'keras'
+            print(f"[INFO] SavedModel OK. Output: {self.model.output_shape}")
+
+        elif os.path.exists(tflite_path):
+            print(f"[INFO] Cargando TFLite: {tflite_path}")
+            import tensorflow as tf
+            self._interp = tf.lite.Interpreter(model_path=tflite_path)
+            self._interp.allocate_tensors()
+            self._inp = self._interp.get_input_details()
+            self._out = self._interp.get_output_details()
+            self._mode = 'tflite'
+            print(f"[INFO] TFLite OK")
+
         elif os.path.exists(model_path):
             print(f"[INFO] Cargando .h5: {model_path}")
-            os.environ['TF_USE_LEGACY_KERAS'] = '1'
-            os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-            import tf_keras as keras
-            self._keras_model = keras.models.load_model(model_path, compile=False)
-            print(f"[INFO] .h5 cargado OK")
+            self.model = keras.models.load_model(model_path, compile=False)
+            self._mode = 'keras'
+            print(f"[INFO] .h5 OK")
+
         else:
-            raise FileNotFoundError(f"No se encontró ningún modelo en: {model_path}")
+            raise FileNotFoundError(f"No se encontró modelo en: {model_path}")
 
         # Load labels
         with open(labels_path, 'r', encoding='utf-8') as f:
-            lines = [l.strip() for l in f.readlines() if l.strip()]
+            lines = [l.strip() for l in f if l.strip()]
         self.labels = []
         for line in lines:
             parts = line.split(' ', 1)
-            if len(parts) == 2 and parts[0].isdigit():
-                self.labels.append(parts[1])
-            else:
-                self.labels.append(line)
+            self.labels.append(parts[1] if len(parts) == 2 and parts[0].isdigit() else line)
         print(f"[INFO] Labels: {self.labels}")
 
     def predict(self, image_bytes):
-        img = Image.open(io.BytesIO(image_bytes)).convert('RGB')
-        img = img.resize((224, 224))
-        img_array = np.array(img, dtype=np.float32) / 255.0
-        img_array = np.expand_dims(img_array, axis=0)
+        img = Image.open(io.BytesIO(image_bytes)).convert('RGB').resize((224, 224))
+        arr = np.expand_dims(np.array(img, dtype=np.float32) / 255.0, axis=0)
 
-        if _USE_TFLITE:
-            _interpreter.set_tensor(self._inp[0]['index'], img_array)
-            _interpreter.invoke()
-            predictions = _interpreter.get_tensor(self._out[0]['index'])[0]
+        if self._mode == 'tflite':
+            self._interp.set_tensor(self._inp[0]['index'], arr)
+            self._interp.invoke()
+            preds = self._interp.get_tensor(self._out[0]['index'])[0]
         else:
-            predictions = self._keras_model.predict(img_array, verbose=0)[0]
+            preds = self.model.predict(arr, verbose=0)[0]
 
-        predicted_idx = int(np.argmax(predictions))
-        confidence    = float(predictions[predicted_idx]) * 100
-        categoria     = self.labels[predicted_idx] if predicted_idx < len(self.labels) else f"Categoría {predicted_idx+1}"
+        idx        = int(np.argmax(preds))
+        confidence = float(preds[idx]) * 100
+        categoria  = self.labels[idx] if idx < len(self.labels) else f"Categoría {idx+1}"
 
-        all_scores = [
+        scores = sorted([
             {'categoria': self.labels[i] if i < len(self.labels) else f"Categoría {i+1}",
-             'confianza': round(float(predictions[i]) * 100, 2)}
-            for i in range(len(predictions))
-        ]
-        all_scores.sort(key=lambda x: x['confianza'], reverse=True)
+             'confianza': round(float(preds[i]) * 100, 2)}
+            for i in range(len(preds))
+        ], key=lambda x: x['confianza'], reverse=True)
 
         return {
             'categoria':    categoria,
             'confianza':    round(confidence, 2),
-            'alternativas': all_scores[1:3],
+            'alternativas': scores[1:3],
         }
