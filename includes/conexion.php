@@ -33,6 +33,12 @@ if (!defined('AI_SERVICE_URL')) {
     define('AI_SERVICE_URL', getenv('AI_SERVICE_URL') ?: $default_flask);
 }
 
+// URL base del servicio para /reload (sin /predict)
+if (!defined('AI_BASE_URL')) {
+    $ai_url = AI_SERVICE_URL;
+    define('AI_BASE_URL', str_replace('/predict', '', $ai_url));
+}
+
 function getConexion() {
     global $pdo;
     return $pdo;

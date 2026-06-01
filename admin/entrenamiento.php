@@ -207,7 +207,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 if (($result['training_samples'] ?? 0) < 20) $msg .= " (sube más imágenes para mayor precisión)";
 
                 // Notify Flask to reload the model from disk
-                $flask_reload = @file_get_contents('http://localhost:5000/reload', false,
+                $reload_url   = defined('AI_BASE_URL') ? AI_BASE_URL . '/reload' : 'http://localhost:5000/reload';
+                $flask_reload = @file_get_contents($reload_url, false,
                     stream_context_create(['http' => ['method'=>'POST','timeout'=>5,
                         'header'=>'Content-Type: application/json','content'=>'{}']]));
                 $model_reloaded = ($flask_reload && strpos($flask_reload, '"ok"') !== false);
