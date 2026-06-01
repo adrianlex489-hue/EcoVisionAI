@@ -5,7 +5,7 @@ services:
     pythonVersion: "3.11.9"
     rootDir: api_ai
     buildCommand: pip install -r render_requirements.txt
-    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120
+    startCommand: python -m gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120
     envVars:
       - key: TF_CPP_MIN_LOG_LEVEL
         value: "2"
