@@ -22,6 +22,7 @@ class ModelPredictor:
             )
 
         import tensorflow as tf
+        print(f"[INFO] TF version: {tf.__version__}")
         self._interp = tf.lite.Interpreter(model_path=tflite_path)
         self._interp.allocate_tensors()
         self._inp = self._interp.get_input_details()
