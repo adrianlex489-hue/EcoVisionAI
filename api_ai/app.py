@@ -3,12 +3,13 @@ import time
 import traceback
 
 os.environ['TF_USE_LEGACY_KERAS'] = '1'
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'  # disable GPU completely
 
 import uuid
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from predict import ModelPredictor
 
 app = Flask(__name__)
 CORS(app)
@@ -19,13 +20,14 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 MODEL_PATH  = os.path.join(os.path.dirname(__file__), 'keras_model.h5')
 LABELS_PATH = os.path.join(os.path.dirname(__file__), 'labels.txt')
 
-# ── Auto-reload predictor when model or labels file changes on disk ──────────
-_predictor       = None
-_model_mtime     = 0
-_labels_mtime    = 0
+# Lazy import — don't load TF at startup, only on first request
+_predictor    = None
+_model_mtime  = 0
+_labels_mtime = 0
 
 def get_predictor():
     global _predictor, _model_mtime, _labels_mtime
+    from predict import ModelPredictor
 
     try:
         current_model_mtime  = os.path.getmtime(MODEL_PATH)  if os.path.exists(MODEL_PATH)  else 0
@@ -37,11 +39,11 @@ def get_predictor():
     if (_predictor is None
             or current_model_mtime  != _model_mtime
             or current_labels_mtime != _labels_mtime):
-        print(f"[INFO] Cargando modelo desde disco...")
+        print(f"[INFO] Cargando modelo...")
         _predictor       = ModelPredictor(MODEL_PATH, LABELS_PATH)
         _model_mtime     = current_model_mtime
         _labels_mtime    = current_labels_mtime
-        print(f"[INFO] Modelo cargado. Categorías: {_predictor.labels}")
+        print(f"[INFO] Modelo listo. Categorías: {_predictor.labels}")
 
     return _predictor
 
